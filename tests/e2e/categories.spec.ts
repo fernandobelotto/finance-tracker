@@ -28,7 +28,7 @@ test.describe("Categories CRUD", () => {
     await page.getByLabel("Name").fill("Parent Category");
     await page.getByLabel("Color").fill("#3f51b5");
     await page.getByRole("button", { name: "Create Category" }).click();
-    await expect(page.getByText("Parent Category")).toBeVisible();
+    await expect(page.locator("main").getByText("Parent Category")).toBeVisible();
 
     await page.getByRole("button", { name: "Add Category" }).click();
     await page.getByLabel("Name").fill("Test Sub-Category");
@@ -56,7 +56,9 @@ test.describe("Categories CRUD", () => {
     await page.getByRole("button", { name: "Add Category" }).click();
     await page.getByLabel("Name").fill("Edit Me");
     await page.getByRole("button", { name: "Create Category" }).click();
-    await expect(page.getByText("Edit Me")).toBeVisible();
+    // Scope to the list: while the dialog closes, its parent <select> also
+    // lists the new category.
+    await expect(page.locator("main").getByText("Edit Me")).toBeVisible();
 
     const row = page.getByTestId("category-row").filter({ hasText: "Edit Me" });
     await row.getByTestId("edit-category").click();
@@ -66,8 +68,10 @@ test.describe("Categories CRUD", () => {
     await page.getByLabel("Name").fill("Edit Me Updated");
     await page.getByRole("button", { name: "Save Changes" }).click();
 
-    await expect(page.getByRole("heading", { name: "Edit" })).toBeHidden();
-    await expect(page.getByText("Edit Me Updated")).toBeVisible();
+    // The closing dialog re-renders with a "Create Category" title, so wait
+    // for the dialog itself rather than the "Edit" heading.
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page.locator("main").getByText("Edit Me Updated")).toBeVisible();
   });
 
   test("changes a category's parent", async ({ page }) => {
