@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { eq, and, asc, count, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "#/db";
+import { runBudgetAlertCheck } from "#/server/budgets.server";
 import { requireUserId } from "#/server/session";
 
 
@@ -86,9 +87,17 @@ export const getCategories = createServerFn({ method: "GET" }).handler(
       }
     }
 
+    // Lets the delete dialog warn that the category's budget goes with it.
+    const budgeted = await db
+      .select({ category_id: schema.budgets.category_id })
+      .from(schema.budgets)
+      .where(eq(schema.budgets.user_id, userId));
+    const budgetedIds = new Set(budgeted.map((b) => b.category_id));
+
     return rows.map((row) => ({
       ...row,
       child_count: childCountMap.get(row.id) ?? 0,
+      has_budget: budgetedIds.has(row.id),
     }));
   },
 );
@@ -215,6 +224,8 @@ export const updateCategory = createServerFn({ method: "POST" })
         ),
       );
 
+    // Moving a category changes which parent budgets its spending counts for.
+    await runBudgetAlertCheck(userId);
     return { success: true };
   });
 
@@ -305,10 +316,33 @@ export const deleteCategory = createServerFn({ method: "POST" })
       .delete(schema.categorization_rules)
       .where(inArray(schema.categorization_rules.category_id, allIdsToDelete));
 
+    // Budgets (and their alert ledger) reference the categories, so they go
+    // first. The UI warns about this before confirming.
+    await db
+      .delete(schema.budgets)
+      .where(
+        and(
+          inArray(schema.budgets.category_id, allIdsToDelete),
+          eq(schema.budgets.user_id, userId),
+        ),
+      );
+    await db
+      .delete(schema.budget_alerts)
+      .where(
+        and(
+          inArray(schema.budget_alerts.category_id, allIdsToDelete),
+          eq(schema.budget_alerts.user_id, userId),
+        ),
+      );
+
     // Delete all descendant categories first, then the target
     await db
       .delete(schema.categories)
       .where(inArray(schema.categories.id, allIdsToDelete));
 
+    // Reassigned transactions can push the target's budget over.
+    if (data.reassignToCategoryId) {
+      await runBudgetAlertCheck(userId);
+    }
     return { success: true };
   });

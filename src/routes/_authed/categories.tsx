@@ -81,6 +81,25 @@ function getTopLevelCategories(categories: CategoryRow[]): CategoryRow[] {
   return categories.filter((c) => c.parent_id === null);
 }
 
+// Deleting a category deletes its subcategories too, so their budgets go
+// with it. Returns the budgeted categories' names, the deleted one first.
+function budgetedInSubtree(categories: CategoryRow[], rootId: string): string[] {
+  const names: string[] = [];
+  const pending = [rootId];
+  const seen = new Set<string>();
+  while (pending.length > 0) {
+    const id = pending.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const category = categories.find((c) => c.id === id);
+    if (category?.has_budget) names.push(category.name);
+    for (const c of categories) {
+      if (c.parent_id === id) pending.push(c.id);
+    }
+  }
+  return names;
+}
+
 // --- Category Row Component ---
 
 function CategoryRow({
@@ -326,6 +345,7 @@ function DeleteConfirm({
   categoryName,
   transactionCount,
   childCount,
+  budgetNames,
   reassignOptions,
   error,
   onConfirm,
@@ -335,6 +355,7 @@ function DeleteConfirm({
   categoryName: string;
   transactionCount: number;
   childCount: number;
+  budgetNames: string[];
   reassignOptions: CategoryRow[];
   error: string | null;
   onConfirm: (reassignToCategoryId: string | null) => void;
@@ -363,6 +384,16 @@ function DeleteConfirm({
         {hasChildren && (
           <div className="p-2 rounded-md bg-amber-500/10 text-amber-600 text-xs">
             {m.delete_will_remove_children({ n: childCount })}
+          </div>
+        )}
+        {budgetNames.length > 0 && (
+          <div
+            className="p-2 rounded-md bg-amber-500/10 text-amber-600 text-xs"
+            data-testid="delete-category-budget-warning"
+          >
+            {m.delete_category_budget_warning({
+              names: budgetNames.join(", "),
+            })}
           </div>
         )}
         {hasTransactions ? (
@@ -463,6 +494,7 @@ function CategoriesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["budgets"] });
     },
   });
 
@@ -679,6 +711,9 @@ function CategoriesPage() {
         }
         childCount={
           categories.find((c) => c.id === deleteConfirmId)?.child_count ?? 0
+        }
+        budgetNames={
+          deleteConfirmId ? budgetedInSubtree(categories, deleteConfirmId) : []
         }
         reassignOptions={categories.filter((c) => c.id !== deleteConfirmId)}
         error={deleteError}

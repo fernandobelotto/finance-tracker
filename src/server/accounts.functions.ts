@@ -3,6 +3,7 @@ import { eq, and, asc, count, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "#/db";
 import { checkAccountLimit } from "#/server/billing.server";
+import { runBudgetAlertCheck } from "#/server/budgets.server";
 import { requireUserId } from "#/server/session";
 
 
@@ -97,6 +98,8 @@ export const updateAccount = createServerFn({ method: "POST" })
         ),
       );
 
+    // A currency change moves the account's spending between budgets.
+    await runBudgetAlertCheck(userId);
     return { success: true };
   });
 

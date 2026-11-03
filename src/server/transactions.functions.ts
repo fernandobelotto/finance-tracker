@@ -3,6 +3,7 @@ import { eq, and, asc, desc, count, gte, lte, ilike, isNull, isNotNull, sql } fr
 import { z } from "zod";
 import { db, schema } from "#/db";
 import { ownedEntityExists } from "#/server/ownership.server";
+import { runBudgetAlertCheck } from "#/server/budgets.server";
 import { requireUserId } from "#/server/session";
 
 
@@ -303,6 +304,7 @@ export const createTransaction = createServerFn({ method: "POST" })
       source_ref: data.sourceRef || null,
     });
 
+    await runBudgetAlertCheck(userId);
     return {
       id,
       account_id: data.accountId,
@@ -379,6 +381,7 @@ export const updateTransaction = createServerFn({ method: "POST" })
         ),
       );
 
+    await runBudgetAlertCheck(userId);
     return { success: true };
   });
 
