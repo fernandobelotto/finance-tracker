@@ -408,4 +408,32 @@ test.describe("Transaction List Page", () => {
 
     await expect(page.getByLabel("Search")).toHaveValue("");
   });
+
+  // Transaction dates are calendar dates (no time zone). A browser behind
+  // UTC must not shift them to the previous day — a transaction on the 1st
+  // would otherwise look like it belongs to the previous month while still
+  // counting toward the new month's budget.
+  test.describe("in a time zone behind UTC", () => {
+    test.use({ timezoneId: "America/Los_Angeles" });
+
+    test("shows the stored calendar date, not the previous day", async ({
+      page,
+    }) => {
+      await createAccount(page, "Main");
+
+      await fillTransactionForm(page, {
+        date: "2025-03-01",
+        description: "First of month",
+        amount: "10.00",
+        account: "Main (PLN)",
+      });
+
+      const row = page
+        .getByRole("table")
+        .getByRole("row")
+        .filter({ hasText: "First of month" });
+      await expect(row.getByText("Mar 1, 2025")).toBeVisible();
+      await expect(row.getByText("Feb 28, 2025")).toHaveCount(0);
+    });
+  });
 });
