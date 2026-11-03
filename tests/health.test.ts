@@ -14,7 +14,9 @@ async function migratedDb() {
   return db;
 }
 
-describe("readiness check", () => {
+// Each test boots a fresh PGlite and runs every migration: ~1s alone, but
+// several seconds when the whole suite competes for CPU.
+describe("readiness check", { timeout: 30_000 }, () => {
   it("reports ready against a reachable, migrated database", async () => {
     const db = await migratedDb();
     const result = await checkReadiness(db, migrationsFolder);

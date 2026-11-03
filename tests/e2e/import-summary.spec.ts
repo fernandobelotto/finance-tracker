@@ -23,6 +23,12 @@ async function importCsv(
   accountLabel: string,
 ) {
   await page.getByRole("link", { name: "Dashboard" }).click();
+  // Wait for the dashboard to render before leaving it: the router keeps the
+  // Import page mounted while the navigation is pending, so clicking Import
+  // too early never remounts (and resets) the wizard.
+  await expect(
+    page.getByRole("heading", { name: "Dashboard", exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Import" }).click();
 
   // Upload step — click the "Choose File" label to open the native file chooser
