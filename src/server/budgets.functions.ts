@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "#/db";
+import { MAX_BUDGET_LIMIT_MINOR } from "#/lib/budget-limit";
 import { getEntitlements } from "#/server/billing.server";
 import {
   createBudgetWithinLimit,
@@ -22,8 +23,7 @@ const limitMinorSchema = z
   .number()
   .int()
   .positive("Limit must be greater than zero")
-  // 10,000,000.00 — well inside the Postgres integer column.
-  .max(1_000_000_000);
+  .max(MAX_BUDGET_LIMIT_MINOR);
 
 const createBudgetSchema = z.object({
   categoryId: z.string().min(1),

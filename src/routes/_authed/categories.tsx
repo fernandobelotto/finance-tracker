@@ -81,10 +81,10 @@ function getTopLevelCategories(categories: CategoryRow[]): CategoryRow[] {
   return categories.filter((c) => c.parent_id === null);
 }
 
-// Deleting a category deletes its subcategories too, so their budgets go
-// with it. Returns the budgeted categories' names, the deleted one first.
-function budgetedInSubtree(categories: CategoryRow[], rootId: string): string[] {
-  const names: string[] = [];
+// Deleting a category deletes its subcategories too. Returns the category
+// and all its descendants, the deleted one first.
+function subtree(categories: CategoryRow[], rootId: string): CategoryRow[] {
+  const result: CategoryRow[] = [];
   const pending = [rootId];
   const seen = new Set<string>();
   while (pending.length > 0) {
@@ -92,12 +92,12 @@ function budgetedInSubtree(categories: CategoryRow[], rootId: string): string[] 
     if (seen.has(id)) continue;
     seen.add(id);
     const category = categories.find((c) => c.id === id);
-    if (category?.has_budget) names.push(category.name);
+    if (category) result.push(category);
     for (const c of categories) {
       if (c.parent_id === id) pending.push(c.id);
     }
   }
-  return names;
+  return result;
 }
 
 // --- Category Row Component ---
@@ -437,7 +437,11 @@ function DeleteConfirm({
           <AlertDialogCancel onClick={onCancel}>{m.cancel()}</AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
-            onClick={() => onConfirm(reassignToId || null)}
+            onClick={(e) => {
+              // Stay open until the delete succeeds so errors stay visible.
+              e.preventDefault();
+              onConfirm(reassignToId || null);
+            }}
           >
             {m.delete()}
           </AlertDialogAction>
@@ -489,8 +493,11 @@ function CategoriesPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (data: { id: string; reassignToCategoryId: string | null }) =>
-      deleteCategoryFn({ data }),
+    mutationFn: (data: {
+      id: string;
+      reassignToCategoryId: string | null;
+      confirmedBudgetCategoryIds: string[];
+    }) => deleteCategoryFn({ data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
@@ -508,6 +515,14 @@ function CategoriesPage() {
   // Delete state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // What the delete dialog shows: the server refuses the delete if the
+  // budgets it would remove don't match the ones warned about here.
+  const deleteSubtree = deleteConfirmId
+    ? subtree(categories, deleteConfirmId)
+    : [];
+  const deleteSubtreeIds = new Set(deleteSubtree.map((c) => c.id));
+  const budgetedToDelete = deleteSubtree.filter((c) => c.has_budget);
 
   // Build tree
   const tree = buildCategoryTree(categories);
@@ -567,9 +582,20 @@ function CategoriesPage() {
       const result = await deleteMutation.mutateAsync({
         id: deleteConfirmId,
         reassignToCategoryId,
+        confirmedBudgetCategoryIds: budgetedToDelete.map((c) => c.id),
       });
       if (result && "error" in result) {
-        setDeleteError(result.error ?? null);
+        // The page's view was out of date: show fresh data.
+        queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+        setDeleteError(
+          result.code === "category_not_found"
+            ? m.delete_category_not_found()
+            : result.code === "reassign_target_invalid"
+              ? m.delete_category_reassign_invalid()
+              : result.code === "budgets_changed"
+                ? m.delete_category_budgets_changed()
+                : (result.error ?? null),
+        );
         return;
       }
 
@@ -585,6 +611,8 @@ function CategoriesPage() {
   const handleDeleteClick = (id: string) => {
     setDeleteConfirmId(id);
     setDeleteError(null);
+    // The budget warning must reflect the latest data.
+    queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
   };
 
   return (
@@ -712,10 +740,8 @@ function CategoriesPage() {
         childCount={
           categories.find((c) => c.id === deleteConfirmId)?.child_count ?? 0
         }
-        budgetNames={
-          deleteConfirmId ? budgetedInSubtree(categories, deleteConfirmId) : []
-        }
-        reassignOptions={categories.filter((c) => c.id !== deleteConfirmId)}
+        budgetNames={budgetedToDelete.map((c) => c.name)}
+        reassignOptions={categories.filter((c) => !deleteSubtreeIds.has(c.id))}
         error={deleteError}
         onConfirm={handleDeleteConfirm}
         onCancel={() => {

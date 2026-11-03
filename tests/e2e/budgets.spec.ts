@@ -294,6 +294,31 @@ test.describe("Budgets", () => {
   });
 });
 
+test.describe("Budgets: limit validation", () => {
+  test("explains the maximum limit instead of a generic error", async ({
+    page,
+    signedInUser: _signedInUser,
+  }) => {
+    await page.goto("/budgets");
+    await page.getByRole("button", { name: "Add budget" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add budget" });
+    await dialog.getByLabel("Category").selectOption({ label: "Health" });
+    await dialog.getByLabel("Monthly limit").fill("20000000");
+    await dialog.getByRole("button", { name: "Add budget" }).click();
+
+    await expect(dialog.getByRole("alert")).toContainText(
+      "The monthly limit can be at most",
+    );
+    await expect(dialog).toBeVisible();
+
+    // The maximum itself is accepted.
+    await dialog.getByLabel("Monthly limit").fill("10000000");
+    await dialog.getByRole("button", { name: "Add budget" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(budgetRow(page, "Health")).toBeVisible();
+  });
+});
+
 test.describe("Budgets: unverified email", () => {
   test("no alert email for an unverified address", async ({ page }) => {
     const res = await page.request.post(
@@ -440,6 +465,70 @@ test.describe("Budgets: category deletion", () => {
   });
 });
 
+test.describe("Budgets: category deletion safety", () => {
+  test("refuses a delete whose budget warning is out of date", async ({
+    page,
+    signedInUser: _signedInUser,
+  }) => {
+    await page.goto("/categories");
+    const transport = page
+      .getByTestId("category-row")
+      .filter({ hasText: /^Transport/ });
+    await transport.getByTestId("delete-category").click();
+    const confirm = page.getByRole("alertdialog", { name: "Delete Category" });
+    await expect(confirm).toBeVisible();
+    await expect(
+      confirm.getByTestId("delete-category-budget-warning"),
+    ).toBeHidden();
+
+    // While the dialog is open, a budget is added in another tab.
+    const other = await page.context().newPage();
+    await other.goto("/budgets");
+    await addBudget(other, { category: "Transport › Fuel", limit: "100" });
+    await other.close();
+
+    // The first delete is refused and nothing is removed...
+    await confirm.getByRole("button", { name: "Delete" }).click();
+    await expect(confirm.getByRole("alert")).toContainText(
+      "Budgets for these categories changed",
+    );
+    // ...and the dialog now shows the warning it should have shown.
+    await expect(
+      confirm.getByTestId("delete-category-budget-warning"),
+    ).toHaveText("Deleting this category also deletes the budget for: Fuel.");
+
+    // Confirming with the up-to-date warning deletes both.
+    await confirm.getByRole("button", { name: "Delete" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(transport).toHaveCount(0);
+    await goToBudgets(page);
+    await expect(
+      page.getByRole("heading", { name: "No budgets yet" }),
+    ).toBeVisible();
+  });
+
+  test("never offers a deleted subcategory as the reassignment target", async ({
+    page,
+    signedInUser: _signedInUser,
+  }) => {
+    await page.goto("/dashboard");
+    await addTransaction(page, { amount: "12", category: "Transport" });
+    await page.getByRole("link", { name: "Categories" }).click();
+    const transport = page
+      .getByTestId("category-row")
+      .filter({ hasText: /^Transport/ });
+    await transport.getByTestId("delete-category").click();
+    const confirm = page.getByRole("alertdialog", { name: "Delete Category" });
+    const target = confirm.getByLabel("Reassign transactions to");
+    await expect(target).toBeVisible();
+
+    const options = await target.locator("option").allTextContents();
+    expect(options).toContain("Health");
+    expect(options).not.toContain("Transport");
+    expect(options).not.toContain("Fuel");
+  });
+});
+
 test.describe("Budgets: switching users", () => {
   test("the next user never sees the previous user's budgets", async ({
     page,
@@ -481,6 +570,51 @@ test.describe("Budgets: switching users", () => {
       () => (window as unknown as { __seenBudgets: string[] }).__seenBudgets,
     );
     expect(seen).toEqual([]);
+  });
+});
+
+test.describe("Budgets: switching users with a stale tab", () => {
+  test("a stale tab can't delete the previous user's category", async ({
+    page,
+  }) => {
+    // User A signs in and opens Categories.
+    const resA = await page.request.post(
+      "/test-create-user?seed=defaults&signIn=false",
+    );
+    const a = (await resA.json()) as { username: string; password: string };
+    await page.goto("/login");
+    await page.getByLabel("Email or username").fill(a.username);
+    await page.getByLabel("Password").fill(a.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL("/dashboard");
+    await page.getByRole("link", { name: "Categories" }).click();
+    const fuel = page
+      .getByTestId("category-row")
+      .filter({ hasText: /^Fuel/ });
+    await expect(fuel).toBeVisible();
+
+    // B signs in elsewhere in the same browser; this tab isn't reloaded.
+    await page.request.post("/test-create-user?seed=defaults");
+
+    await fuel.getByTestId("delete-category").click();
+    const confirm = page.getByRole("alertdialog", { name: "Delete Category" });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Delete" }).click();
+    await expect(confirm.getByRole("alert")).toContainText(
+      "This category no longer exists",
+    );
+
+    // A still has the category and its rules.
+    await page.context().clearCookies();
+    await page.goto("/login");
+    await page.getByLabel("Email or username").fill(a.username);
+    await page.getByLabel("Password").fill(a.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL("/dashboard");
+    await page.goto("/categories");
+    await expect(fuel).toBeVisible();
+    await page.goto("/categorization");
+    await expect(page.getByText("Orlen", { exact: true }).first()).toBeVisible();
   });
 });
 

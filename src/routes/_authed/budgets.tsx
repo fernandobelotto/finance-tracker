@@ -31,6 +31,7 @@ import {
   minorToInputValue,
   parseAmountToMinor,
 } from "#/lib/money";
+import { MAX_BUDGET_LIMIT_MINOR } from "#/lib/budget-limit";
 import { formatMonth } from "#/lib/month";
 import { cn } from "#/lib/utils";
 import { getAccounts } from "#/server/accounts.functions";
@@ -285,6 +286,14 @@ function BudgetForm({
     const limitMinor = parseAmountToMinor(limit);
     if (limitMinor === null || limitMinor <= 0) {
       setValidationError(m.budget_limit_invalid());
+      return;
+    }
+    if (limitMinor > MAX_BUDGET_LIMIT_MINOR) {
+      setValidationError(
+        m.budget_limit_too_large({
+          max: formatMoney(MAX_BUDGET_LIMIT_MINOR, currency),
+        }),
+      );
       return;
     }
     setValidationError(null);
