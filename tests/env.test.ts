@@ -190,5 +190,12 @@ describe("env validation", () => {
     expect(() => validateEnv({ BILLING_FREE_MAX_ACCOUNTS: "0" })).toThrow(
       /BILLING_FREE_MAX_ACCOUNTS/,
     );
+    expect(validateEnv({}).billing.freeMaxBudgets).toBe(3);
+    expect(
+      validateEnv({ BILLING_FREE_MAX_BUDGETS: "5" }).billing.freeMaxBudgets,
+    ).toBe(5);
+    expect(() => validateEnv({ BILLING_FREE_MAX_BUDGETS: "0" })).toThrow(
+      /BILLING_FREE_MAX_BUDGETS/,
+    );
   });
 });

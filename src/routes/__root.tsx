@@ -1,10 +1,11 @@
 import {
   HeadContent,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
   Outlet,
   Link,
 } from "@tanstack/react-router";
+import type { QueryClient } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useCallback, lazy, Suspense } from "react";
 
@@ -46,12 +47,28 @@ const getAuthState = createServerFn({ method: "GET" }).handler(
   },
 );
 
-export const Route = createRootRoute({
-  beforeLoad: async (): Promise<{
+// The browser's query cache outlives sign-out: without this, the next user
+// to sign in on the same tab would briefly see the previous user's cached
+// data. undefined = not seen yet (first load / hydration).
+let cacheUserId: string | null | undefined;
+
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  beforeLoad: async ({
+    context,
+  }): Promise<{
     user: SessionUser | null;
     hasUsers: boolean;
   }> => {
     const result = await getAuthState();
+
+    // Client only — on the server every request gets a fresh QueryClient.
+    if (typeof window !== "undefined") {
+      const userId = result.user?.userId ?? null;
+      if (cacheUserId !== undefined && cacheUserId !== userId) {
+        context.queryClient.clear();
+      }
+      cacheUserId = userId;
+    }
 
     return {
       user: result.user,

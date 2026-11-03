@@ -9,6 +9,7 @@ import {
   getMonthlyUsageSummary,
 } from "#/server/ai-usage.server";
 import { decimalToMinor, formatMinor } from "#/lib/money";
+import { runBudgetAlertCheck } from "#/server/budgets.server";
 import {
   MAX_RECEIPT_IMAGES,
   MAX_RECEIPT_IMAGE_BYTES,
@@ -568,6 +569,7 @@ export const saveReceiptAndLink = createServerFn({ method: "POST" })
       transaction = transaction[0];
     }
 
+    await runBudgetAlertCheck(userId);
     return {
       success: true,
       receipt_id: receiptId,

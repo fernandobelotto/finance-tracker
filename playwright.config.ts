@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// E2E_PORT lets several checkouts/worktrees run the suite side by side.
+const PORT = process.env.E2E_PORT ?? "3000";
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
@@ -11,7 +15,7 @@ export default defineConfig({
   workers: process.env.CI ? 4 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -37,7 +41,7 @@ export default defineConfig({
     // TanStack Start, so E2E builds the app and runs the real prod server
     // — the same code path real users hit.
     command: "pnpm run preview",
-    url: "http://127.0.0.1:3000",
+    url: BASE_URL,
     env: {
       // Build needs NODE_ENV=production so React Compiler emits prod JSX;
       // the runtime checks TEST_MODE=1 to switch the DB to in-memory PGlite
@@ -45,12 +49,12 @@ export default defineConfig({
       // the real one users hit.
       TEST_MODE: "1",
       HOST: "127.0.0.1",
-      PORT: "3000",
+      PORT,
       AI_FAKE: "1",
       AI_API_KEY: "test-key",
       // Email links inside captured test emails must point at the same
       // origin the browser drives.
-      APP_BASE_URL: "http://127.0.0.1:3000",
+      APP_BASE_URL: BASE_URL,
     },
     stdout: "pipe",
     stderr: "pipe",
