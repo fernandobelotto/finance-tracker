@@ -12,7 +12,9 @@ function freshDb() {
   return drizzle(client);
 }
 
-describe("startup migrations", () => {
+// Each test boots a fresh PGlite and runs every migration: ~1s alone, but
+// several seconds when the whole suite competes for CPU.
+describe("startup migrations", { timeout: 30_000 }, () => {
   it("applies all migrations to an empty database and is idempotent", async () => {
     const db = freshDb();
     await runMigrations(db, "pglite", migrationsFolder);

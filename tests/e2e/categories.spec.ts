@@ -86,7 +86,11 @@ test.describe("Categories CRUD", () => {
     await page.getByLabel("Parent Category").selectOption("Target Parent");
     await page.getByRole("button", { name: "Save Changes" }).click();
 
-    await expect(page.getByText("Move Me")).toBeVisible();
+    // While the dialog closes it briefly re-renders in "create" mode, whose
+    // parent <select> also lists "Move Me" — wait for it to go, and scope the
+    // check to the category list.
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(moveMeRow).toBeVisible();
   });
 
   test("deletes a category with no children", async ({ page }) => {
